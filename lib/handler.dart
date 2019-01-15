@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:reflexman/services.dart';
+
 const String defaultShell = "/bin/sh";
 
 enum HandlerType {
@@ -9,7 +11,7 @@ enum HandlerType {
 class Command {
   String _shell, _dir, _command;
 
-  Command(this._dir, this._command, [this._shell]) {
+  Command(this._command, this._dir, [this._shell]) {
     if (this._shell == null)
       this._shell = defaultShell;
   }
@@ -20,15 +22,14 @@ class Command {
     this._shell = json.containsKey("shell") ? json["shell"] : defaultShell;
   }
 
-  ProcessResult runSync() {
-    return Process.runSync(_shell, ["-c", "cd $_dir; $_command"]);
-  }
+  ProcessResult runSync() => Process.runSync(_shell, ["-c", "cd $_dir; $_command"]);
 }
 
 abstract class Handler {
+  Service service;
   HandlerType type;
 
-  Handler(this.type);
+  Handler(this.type, this.service);
 
   int start();
   bool isRunning();
@@ -39,20 +40,20 @@ abstract class Handler {
 class BinaryHandler extends Handler {
   Command _start, _isRunning, _stop, _kill;
 
-  BinaryHandler() : super(HandlerType.BINARY) {}
+  BinaryHandler(service) : super(HandlerType.BINARY, service) {}
 
-  BinaryHandler.fromJson(Map<String, dynamic> json) : super(HandlerType.BINARY) {
-    _start = new Command.fromJson(json["start"]);
-    _isRunning = new Command.fromJson(json["isRunning"]);
-    _stop = new Command.fromJson(json["stop"]);
-    _kill = new Command.fromJson(json["kill"]);
+  BinaryHandler.fromJson(Map<String, dynamic> json, service) : super(HandlerType.BINARY, service) {
+    _start = new Command.fromJson(service.buildEnvs() + json["start"]);
+    _isRunning = new Command.fromJson(service.buildEnvs() + json["isRunning"]);
+    _stop = new Command.fromJson(service.buildEnvs() + json["stop"]);
+    _kill = new Command.fromJson(service.buildEnvs() + json["kill"]);
   }
 
   @override
   int start() => _start.runSync().exitCode;
 
   @override
-  bool isRunning() => _isRunning.runSync().exitCode == 1;
+  bool isRunning() => _isRunning.runSync().exitCode == 0;
 
   @override
   int stop() => _stop.runSync().exitCode;
@@ -62,15 +63,16 @@ class BinaryHandler extends Handler {
 }
 
 class TmuxHandler extends BinaryHandler {
-  TmuxHandler.fromJson(Map<String, dynamic> json) {
+  TmuxHandler.fromJson(Map<String, dynamic> json, service) : super(service) {
     var session = json["session"];
-    var command = json["command"];
+    var command = service.buildEnvs() + json["command"];
+    var dir = json["dir"];
     var shutdownTrigger = json["shutdownTrigger"];
 
     type = HandlerType.TMUX;
-    _start = new Command("tmux new -d -s $session $command", "~");
-    _isRunning = new Command("tmux ls | cut -d ':' -f1 | grep -q $command", "~");
-    _stop = new Command("tmux send -t $session $shutdownTrigger", "~");
-    _kill = new Command("tmux kill-session -t $session", "~");
+    _start = new Command("tmux new -d -s $session '$command'", dir);
+    _isRunning = new Command("tmux ls | cut -d ':' -f1 | grep -w -q $session", dir);
+    _stop = new Command("tmux send -t $session $shutdownTrigger", dir);
+    _kill = new Command("tmux kill-session -t $session", dir);
   }
 }

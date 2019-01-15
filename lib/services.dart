@@ -1,82 +1,151 @@
 import 'dart:convert';
 import 'package:reflexman/handler.dart';
 import 'dart:io';
+import 'util.dart' as util;
 
-final List<Service> list = new List();
+final List<Service> list = [];
 
 class Service {
   String name, description;
-  bool enabled;
+  bool enabled, manual;
+
+  Map<String, String> envs;
 
   HandlerType handlerType;
   Handler handler;
 
-  int shutdownSeconds;
+  int shutdownSeconds, restartSeconds;
 
   Service(Map<String, dynamic> json) {
     name = json["name"];
     description = json["description"];
     enabled = json["enabled"];
+    manual = util.or(json["manual"], false);
+    envs = util.toStringMap(util.or(json["envs"], {}));
 
-    handlerType = HandlerType.values.where((ht) => ht.toString() == json["handlerType"]).first;
+    handlerType = HandlerType.values.firstWhere((ht) => ht.toString() == "HandlerType." + json["handler"]["type"]);
 
     if (handlerType == HandlerType.BINARY)
-      handler = new BinaryHandler.fromJson(json["handler"]);
+      handler = new BinaryHandler.fromJson(json["handler"], this);
     else if (handlerType == HandlerType.TMUX)
-      handler = new TmuxHandler.fromJson(json["handler"]);
+      handler = new TmuxHandler.fromJson(json["handler"], this);
 
     shutdownSeconds = json["shutdownSeconds"];
+    restartSeconds = util.or(json["shutdownSeconds"], -1);
+  }
+
+  String get status {
+    String status = !enabled ? "DISABLED" : null;
+
+    if (status == null)
+      status = handler.isRunning() ? "ONLINE" : "OFFLINE";
+
+    return status;
+  }
+
+  String buildEnvs() {
+    final buf = new StringBuffer();
+
+    envs.forEach((k, v) => buf.write("export " + k + "=" + v + ";"));
+
+    return buf.toString();
   }
 }
 
 readConfig(String jsonString) {
-  var json = new JsonDecoder().convert(jsonString) as List;
+  list.clear();
 
-  for (var serviceJson in json) {
-    list.add(new Service(serviceJson as Map));
-  }
+  (new JsonDecoder().convert(jsonString)).map((serviceJson) => list.add(new Service(serviceJson as Map)));
 }
 
-startup() {
-  for (var service in list) {
-    if (!service.enabled) continue;
-
-    if (service.handler.isRunning()) {
-      print("Service already running: '${service.name}'");
-      continue;
-    }
-
-    if (service.handler.start() != 0)
-      print("Unable to start '${service.name}'. Exit code not 0");
-    else
-      print("Service started successfully: '${service.name}'");
-  }
+overrideEnvs(List<String> envs) {
+  envs.forEach((env) {
+    var split = env.split(":");
+    list.forEach((service) => service.envs[split[0]] = split[1]);
+  });
 }
 
-status() {
+Service getService(String name) {
+  return list.firstWhere((s) => s.name.toLowerCase() == name.toLowerCase(), orElse: () => null);
+}
+
+startup(Service service) {
+  if (service != null) {
+    _startup(service);
+    return;
+  }
+
+  list.where((service) => !service.manual).forEach((service) => _startup(service));
+}
+
+_startup(Service service) {
+  if (!service.enabled) return;
+
+  if (service.handler.isRunning()) {
+    print("Service already running: '${service.name}'");
+    return;
+  }
+
+  if (service.handler.start() != 0) {
+    print("Unable to start '${service.name}'. Exit code not 0");
+    return;
+  }
+
+  print("Service started: '${service.name}'");
+
+  sleep(const Duration(seconds: 1));
+
+  if (!service.handler.isRunning())
+    print("Service not started: '${service.name}'");
+}
+
+
+status(Service service) {
+  util.printTabbed([10, 10], ["Status", "Name"], bold: true);
+
+  if (service != null) {
+    _status(service);
+    return;
+  }
+
   for (var service in list)
-    print("Status of '${service.name}': ${service.enabled ? service.handler.isRunning() : "Disabled"}");
+    _status(service);
 }
 
-shutdown() {
-  for (var service in list) {
-    if (!service.handler.isRunning()) {
-      print("Service not running: '${service.name}'");
-      continue;
-    }
+_status(Service service) {
+  util.printTabbed([10, 10], [service.status, service.name]);
+}
 
-    if (service.handler.stop() != 0) {
-      print("Unable to shutdown service: '${service.name}'");
-    } else {
-      print("Service stopped successfully: '${service.name}'");
-      sleep(new Duration(seconds: service.shutdownSeconds));
-    }
+shutdown(Service service) {
+  if (service != null) {
+    _shutdown(service);
+    return;
+  }
 
-    if (service.handler.isRunning()) {
-      print("Service still running. Killing service: '${service.name}'");
+  for (var service in list)
+    _shutdown(service);
+}
 
-      if (service.handler.kill() != 0)
-        print("Unable to kill service: '${service.name}'");
-    }
+_shutdown(Service service) {
+  if (!service.handler.isRunning()) {
+    print("Service not running: '${service.name}'");
+    return;
+  }
+
+  if (service.handler.stop() != 0) {
+    print("Unable to shutdown service: '${service.name}'");
+  } else {
+    print("Service stop initialized: '${service.name}'");
+    sleep(const Duration(seconds: 1));
+  }
+
+  if (service.handler.isRunning())
+    sleep(new Duration(seconds: service.shutdownSeconds));
+
+  if (service.handler.isRunning()) {
+    print("Service still running. Killing service: '${service.name}'");
+
+    if (service.handler.kill() != 0)
+      print("Unable to kill service: '${service.name}'");
   }
 }
