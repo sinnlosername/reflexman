@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:reflexman/services.dart';
+import 'package:reflexman/util.dart' as util;
 
 const String defaultShell = "/bin/sh";
 
@@ -22,7 +23,51 @@ class Command {
     this._shell = json.containsKey("shell") ? json["shell"] : defaultShell;
   }
 
-  ProcessResult runSync() => Process.runSync(_shell, ["-c", "cd $_dir; $_command"]);
+  ProcessResult runSync() {
+    var command = _command;
+    ProcessResult res;
+
+    if (_dir != null)
+      command = "cd " + _dir + "; " + command + "";
+
+    try {
+      res = Process.runSync(_shell, ["-c", command]);
+    } catch (ex) {
+      ProcessException pex = ex;
+      print("Error Code: ${pex.errorCode}");
+      print("Error Message: ${pex.message}");
+      print("Executeable: ${pex.executable}");
+      print("Arguments: ${pex.arguments}");
+      throw ex;
+    }
+
+
+    return res;
+  }
+}
+
+class FakeCommand extends Command {
+  Function _fakeSupplier;
+
+  FakeCommand(this._fakeSupplier) : super(null, null);
+
+  @override
+  ProcessResult runSync() {
+    return ProcessResult(null, _fakeSupplier(), null, null);
+  }
+}
+
+class WatchedCommand extends Command {
+  Function _watcher;
+
+  WatchedCommand(String command, String dir, this._watcher) : super(command, dir);
+
+  @override
+  ProcessResult runSync() {
+    var res = super.runSync();
+    _watcher();
+    return res;
+  }
 }
 
 abstract class Handler {
@@ -63,6 +108,9 @@ class BinaryHandler extends Handler {
 }
 
 class TmuxHandler extends BinaryHandler {
+  static Command _listCommand = new Command("tmux ls", null);
+  static util.Cache<List<String>> _listCache = util.Cache(_makeNewList);
+
   TmuxHandler.fromJson(Map<String, dynamic> json, service) : super(service) {
     var session = json["session"];
     var command = service.buildEnvs() + json["command"];
@@ -70,9 +118,20 @@ class TmuxHandler extends BinaryHandler {
     var shutdownTrigger = json["shutdownTrigger"];
 
     type = HandlerType.TMUX;
-    _start = new Command("tmux new -d -s $session '$command'", dir);
-    _isRunning = new Command("tmux ls | cut -d ':' -f1 | grep -w -q $session", dir);
-    _stop = new Command("tmux send -t $session $shutdownTrigger", dir);
-    _kill = new Command("tmux kill-session -t $session", dir);
+
+    _start = new WatchedCommand("tmux new -d -s $session '$command'", dir, _listCache.invalidateCache);
+    _isRunning = FakeCommand(() => _listCache.getObj(1).contains(session) ? 0 : 1);
+    _stop = new WatchedCommand("tmux send -t $session $shutdownTrigger", null, _listCache.invalidateCache);
+    _kill = new WatchedCommand("tmux kill-session -t $session", null, _listCache.invalidateCache);
+  }
+
+  static List<String> _makeNewList() {
+    var result = <String>[];
+
+    _listCommand.runSync().stdout
+        .split("\n").where((line) => !line.isEmpty)
+        .forEach((line) => result.add(line.split(":")[0]));
+
+    return result;
   }
 }

@@ -47,12 +47,7 @@ start(List<String> arguments) {
     sleep(new Duration(seconds: int.parse(results["delay"])));
 
   if (results["shutdown"] && results["startup"]) {
-    services.shutdown(service);
-
-    if (service != null && service.restartSeconds != -1)
-      sleep(Duration(seconds: service.restartSeconds));
-
-    services.startup(service);
+    services.restart(service);
     return;
   }
 
@@ -66,7 +61,6 @@ start(List<String> arguments) {
     watcher.handle(results["watcher"] as String);
   else
     print("Usage:\n" + parser.usage);
-
 }
 
 loadConfig() {

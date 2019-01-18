@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:reflexman/handler.dart';
+import 'package:reflexman/watcher.dart' as watcher;
 import 'dart:io';
 import 'util.dart' as util;
 
@@ -31,7 +32,7 @@ class Service {
       handler = new TmuxHandler.fromJson(json["handler"], this);
 
     shutdownSeconds = json["shutdownSeconds"];
-    restartSeconds = util.or(json["shutdownSeconds"], -1);
+    restartSeconds = util.or(json["restartSeconds"], -1);
   }
 
   String get status {
@@ -55,7 +56,8 @@ class Service {
 readConfig(String jsonString) {
   list.clear();
 
-  (new JsonDecoder().convert(jsonString)).map((serviceJson) => list.add(new Service(serviceJson as Map)));
+  var serviceListJson = new JsonDecoder().convert(jsonString) as List;
+  serviceListJson.forEach((serviceJson) => list.add(new Service(serviceJson as Map)));
 }
 
 overrideEnvs(List<String> envs) {
@@ -71,12 +73,17 @@ Service getService(String name) {
 
 startup(Service service) {
   if (service != null) {
-    _startup(service);
+    watcher.handle("custom", () {
+      _startup(service);
+      watcher.setRestartDisabled(service, false);
+    });
     return;
   }
 
   list.where((service) => !service.manual).forEach((service) => _startup(service));
 }
+
+watcherStartup(Service service) => _startup(service);
 
 _startup(Service service) {
   if (!service.enabled) return;
@@ -116,9 +123,25 @@ _status(Service service) {
   util.printTabbed([10, 10], [service.status, service.name]);
 }
 
+restart(Service service) {
+  watcher.handle("custom", () {
+    watcher.setRestartDisabled(service, true);
+    _shutdown(service);
+
+    if (service.restartSeconds > 0)
+      sleep(Duration(seconds: service.restartSeconds));
+
+    _startup(service);
+    watcher.setRestartDisabled(service, false);
+  });
+}
+
 shutdown(Service service) {
   if (service != null) {
-    _shutdown(service);
+    watcher.handle("custom", () {
+      watcher.setRestartDisabled(service, true);
+      _shutdown(service);
+    });
     return;
   }
 
