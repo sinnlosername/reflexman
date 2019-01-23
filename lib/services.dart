@@ -55,9 +55,7 @@ class Service {
       buf.write("export " + k + "=" + v + ";");
     });
 
-    print("$buf");
-
-    return buf.toString();
+    return buf.toString().replaceAll("\n", "");
   }
 }
 
