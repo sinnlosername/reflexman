@@ -4,6 +4,7 @@ import 'package:reflexman/watcher.dart' as watcher;
 import 'dart:io';
 import 'util.dart' as util;
 
+final Map<String, String> overridenEnvs = {};
 final List<Service> list = [];
 
 class Service {
@@ -47,7 +48,14 @@ class Service {
   String buildEnvs() {
     final buf = new StringBuffer();
 
-    envs.forEach((k, v) => buf.write("export " + k + "=" + v + ";"));
+    envs.forEach((k, v) {
+      if (overridenEnvs.containsKey(k))
+        v = overridenEnvs[k];
+
+      buf.write("export " + k + "=" + v + ";");
+    });
+
+    print("$buf");
 
     return buf.toString();
   }
@@ -61,10 +69,7 @@ readConfig(String jsonString) {
 }
 
 overrideEnvs(List<String> envs) {
-  envs.forEach((env) {
-    var split = env.split(":");
-    list.forEach((service) => service.envs[split[0]] = split[1]);
-  });
+  envs.map((env) => env.split(":")).forEach((split) => overridenEnvs[split[0]] = split[1]);
 }
 
 Service getService(String name) {

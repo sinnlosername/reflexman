@@ -26,11 +26,11 @@ start(List<String> arguments) {
     return;
   }
 
-  _config = results["config"];
-  loadConfig();
-
   if (results.wasParsed("envs"))
     services.overrideEnvs(results["envs"]);
+
+  _config = results["config"];
+  loadConfig();
 
   services.Service service;
 
