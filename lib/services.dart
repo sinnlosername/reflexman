@@ -165,8 +165,12 @@ _shutdown(Service service) {
     sleep(const Duration(seconds: 1));
   }
 
-  if (service.handler.isRunning())
-    sleep(new Duration(seconds: service.shutdownSeconds));
+  var total = 0;
+
+  while (total < service.shutdownSeconds && service.handler.isRunning()) {
+    sleep(new Duration(seconds: 2));
+    total += 2;
+  }
 
   if (service.handler.isRunning()) {
     print("Service still running. Killing service: '${service.name}'");

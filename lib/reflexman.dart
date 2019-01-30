@@ -11,6 +11,7 @@ start(List<String> arguments) {
   parser.addFlag("startup", abbr: "s", negatable: false);
   parser.addFlag("status", abbr: "i", negatable: false);
   parser.addFlag("shutdown", abbr: "h", negatable: false);
+  parser.addFlag("sure", negatable: false);
 
   parser.addOption("config", abbr: "c");
   parser.addOption("target", abbr: "t");
@@ -43,10 +44,21 @@ start(List<String> arguments) {
     }
   }
 
+  if (service == null && !results["sure"]) {
+    print("You did not set a target using -t. Your command will effect all services (${services.list.length}).");
+    print("Please execute the command with --sure to confirm this action");
+    return;
+  }
+
   if (results.wasParsed("delay"))
     sleep(new Duration(seconds: int.parse(results["delay"])));
 
   if (results["shutdown"] && results["startup"]) {
+    if (service == null) {
+      print("A restart requires a specified target using -t");
+      return;
+    }
+
     services.restart(service);
     return;
   }

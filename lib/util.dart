@@ -29,6 +29,10 @@ Map<String, String> toStringMap(Map map) {
   return map.map((k, v) => MapEntry(k as String, v as String));
 }
 
+double max(double a, double b) {
+  return a > b ? a : b;
+}
+
 class Cache<T> {
   int i = 0;
   DateTime _date;
@@ -50,18 +54,6 @@ class Cache<T> {
   }
 
   T getObj(seconds) {
-    /*print("[${DateTime.now().toString()}] dd $_date");
-
-    print(i);
-    i = i+1;
-
-
-    //if (DateTime.now().difference(_date).inSeconds > seconds || _obj == null) {
-    //  print("automatic refresh ${DateTime.now().difference(_date).inSeconds} : ${_obj == null}");
-    //  print("auto refresh date: $_date");
-    //}
-
-    return _execSetup();*/
     return DateTime.now().difference(_date).inSeconds > seconds || _obj == null ? _obj = _execSetup() : _obj;
   }
 }

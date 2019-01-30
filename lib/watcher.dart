@@ -93,18 +93,23 @@ _loop(Commands<String, String> redisCmd) async {
   noRestart = await redisCmd.smembers(prefix + "noRestart");
   await redisCmd.set(prefix + "lastAlive", DateTime.now().millisecondsSinceEpoch.toString());
 
+  if (_status == "SHALL_STOP") return;
+
   if (noRestart == null)
     noRestart = [];
 
   if (_status == "SHALL_REFRESH") {
     loadConfig();
     _offlineServices.clear();
+    await _redisCmd.set(prefix + "status", _status = "ONLINE");
     return;
   }
 
   services.list
+      .where((serv) => serv.enabled)
       .where((serv) => !_offlineServices.containsKey(serv))
       .where((serv) => serv.restartSeconds != -1)
+      .where((serv) => !serv.manual)
       .where((serv) => !noRestart.contains(serv.name))
       .forEach((serv) {
     if (serv.handler.isRunning()) return;
@@ -124,5 +129,6 @@ _loop(Commands<String, String> redisCmd) async {
 
     return true;
   });
+
 }
 

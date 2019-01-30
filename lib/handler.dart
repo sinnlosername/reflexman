@@ -41,7 +41,6 @@ class Command {
       throw ex;
     }
 
-
     return res;
   }
 }
