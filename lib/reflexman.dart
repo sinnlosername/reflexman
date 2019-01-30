@@ -44,7 +44,7 @@ start(List<String> arguments) {
     }
   }
 
-  if (service == null && !results["sure"]) {
+  if (service == null && (results["startup"] || results["shutdown"]) && !results["sure"]) {
     print("You did not set a target using -t. Your command will effect all services (${services.list.length}).");
     print("Please execute the command with --sure to confirm this action");
     return;
@@ -74,6 +74,7 @@ start(List<String> arguments) {
   else
     print("Usage:\n" + parser.usage);
 }
+
 
 loadConfig() {
   var file = new File(_config);
